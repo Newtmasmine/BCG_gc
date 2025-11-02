@@ -1607,19 +1607,29 @@
             console.log('洗牌后验证 - 第1张:', gameData.cards[0].type, '第2张:', gameData.cards[1].type);
             
             // 渲染卡片
+            console.log('开始渲染卡片，总数:', gameData.cards.length);
             gameData.cards.forEach((card, index) => {
+                console.log(`渲染卡片 ${index}: 类型=${card.type}, 值=${card.value}`);
                 const cardEl = document.createElement('div');
                 cardEl.className = 'card';
+                cardEl.setAttribute('data-index', index); // 添加数据索引
+                cardEl.setAttribute('data-type', card.type); // 添加类型标记用于调试
                 cardEl.innerHTML = `
-                    <div class="card-front">?</div>
+                    <div class="card-front">${index}</div>
                     <div class="card-back">
-                        <div class="card-value">${card.type === 'reward' ? '积分' + card.value : '💣'}</div>
+                        <div class="card-value"></div>
                     </div>
                 `;
                 
-                cardEl.addEventListener('click', () => flipCard(index));
+                // 修改事件监听器，从元素属性中读取索引
+                cardEl.addEventListener('click', function() {
+                    const cardIndex = parseInt(this.getAttribute('data-index'));
+                    console.log(`点击卡片，DOM索引: ${cardIndex}`);
+                    flipCard(cardIndex);
+                });
                 gameBoard.appendChild(cardEl);
             });
+            console.log('渲染完成，gameBoard.children 数量:', gameBoard.children.length);
             
             // 更新剩余卡片数显示
             remainingCardsEl.textContent = '16';
@@ -1673,7 +1683,40 @@
             if (!gameData.gameActive || gameData.roundEnded || gameData.cards[index].flipped) return;
             
             const card = gameData.cards[index];
-            card.flipped = true;
+            
+            // **关键修改：前两次翻牌时，如果翻到炸弹，则替换为奖励卡**
+            if (gameData.flippedCount < 2) {
+                if (card.type === 'bomb') {
+                    console.log(`第${gameData.flippedCount + 1}次翻牌遇到炸弹，寻找未翻开的奖励卡进行交换`);
+                    
+                    // 找到一张未翻开的奖励卡
+                    const unflippedRewardIndex = gameData.cards.findIndex((c, i) => 
+                        !c.flipped && c.type === 'reward' && i !== index
+                    );
+                    
+                    if (unflippedRewardIndex !== -1) {
+                        // 交换当前卡片和找到的奖励卡
+                        console.log(`交换索引 ${index} (炸弹) 和 ${unflippedRewardIndex} (奖励)`);
+                        const temp = gameData.cards[index];
+                        gameData.cards[index] = gameData.cards[unflippedRewardIndex];
+                        gameData.cards[unflippedRewardIndex] = temp;
+                        
+                        // 重新获取交换后的卡片
+                        const swappedCard = gameData.cards[index];
+                        console.log(`交换后，索引 ${index} 现在是: ${swappedCard.type}`);
+                    } else {
+                        console.warn('警告：没有找到可交换的未翻开奖励卡！');
+                    }
+                }
+            }
+            
+            // 重新获取当前索引的卡片（可能已被交换）
+            const currentCard = gameData.cards[index];
+            
+            // 调试信息
+            console.log(`翻牌 - 索引: ${index}, 卡片类型: ${currentCard.type}, 卡片值: ${currentCard.value}`);
+            
+            currentCard.flipped = true;
             gameData.flippedCount++;
             
             // 如果本轮已经触发过第一个炸弹，则记录此后的翻牌次数
@@ -1699,12 +1742,24 @@
             remainingCardsEl.textContent = 16 - gameData.flippedCount;
             
             const cardEl = gameBoard.children[index];
+            
+            // **先设置卡片背面内容，再添加翻转类**
+            const cardValueEl = cardEl.querySelector('.card-value');
+            if (currentCard.type === 'reward') {
+                cardValueEl.textContent = '积分' + currentCard.value;
+                console.log(`设置奖励卡显示: 积分${currentCard.value}`);
+            } else {
+                cardValueEl.textContent = '💣';
+                console.log(`设置炸弹卡显示: 💣`);
+            }
+            
+            // 然后再翻转卡片
             cardEl.classList.add('flipped');
             
             // 处理卡片类型
-            if (card.type === 'reward') {
+            if (currentCard.type === 'reward') {
                 cardEl.classList.add('reward');
-                gameData.currentRoundBonus += card.value;
+                gameData.currentRoundBonus += currentCard.value;
                 
                 // 显示金币特效
                 showCoinEffect(cardEl);
@@ -1718,7 +1773,7 @@
                     animateNumberRoll(currentBonusEl, displayBonus, true);
                 }, 300);
                 
-                gameMessageEl.textContent = `恭喜！获得 积分${card.value.toLocaleString()} 奖励！`;
+                gameMessageEl.textContent = `恭喜！获得 积分${currentCard.value.toLocaleString()} 奖励！`;
                 gameMessageEl.style.color = '#4caf50';
                 
                 // 不再检查所有奖励卡是否翻完，只在16张卡全部翻完时结束
@@ -3141,7 +3196,7 @@
             a.href = url;
             // 生成文件名：目标_用户名1_用户名2...
             const filename = usernames.length > 0 ? 
-                `过程_${usernames.join('_')}.csv` : 
+                `${usernames.join('_')}.csv` : 
                 '过程_无用户数据.csv';
             a.download = filename;
             document.body.appendChild(a);
